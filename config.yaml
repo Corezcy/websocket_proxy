@@ -1,0 +1,13 @@
+configuration:
+    authenticationConfiguration:
+        password: "rambo"
+    serverConfiguration:
+        # type can be OPEN_URL or FORCED_URL or FORCED_URL_NO_PASSWORD - later two need proxiedUrl uncommented
+        type: "FORCED_URL_NO_PASSWORD"
+        listenHost: "localhost"
+        port: "1111"
+        requestsPerConnection: "10000"
+        proxiedUrl: "ws://10.78.4.163:8083"
+    transportConfiguration:
+        sendPrefix: "" # these allow a prefix and suffix on all arbitrary requests to proxied server
+        sendSuffix: ""
