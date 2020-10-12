@@ -8,14 +8,18 @@ import asyncio
 import json
 
 class WebSocketProxpy:
+
     logger = None
     host = "localhost"
-    port = 1111
+    port = 0
     serverType = "OPEN_URL"
     proxied_url = ""
     password = ""
     send_suffix = ""
     send_prefix = ""
+    proxied_port_list = []
+    is_port_used = {}
+
     requests_per_connection = 10000
 
     def __init__(self, logger):
@@ -95,11 +99,20 @@ class WebSocketProxpy:
 
         if self.is_forced_url_server() or self.is_forced_url_no_password_server():
             self.proxied_url = server_config['proxiedUrl']
+            self.proxied_port_list = server_config['proxiedPortList']
 
             if self.proxied_url is None or self.proxied_url == "":
                 error_message = "Proxied url in config missing--required when running in FORCED_URL mode."
                 self.logger.error(error_message)
                 base.fatal_fail(None)
+            if self.proxied_port_list is None :
+                error_message = "Proxied url in config missing--required when running in FORCED_URL mode."
+                self.logger.error(error_message)
+                base.fatal_fail(None)
+
+            for i in range(len(self.proxied_port_list)):
+                self.is_port_used[str(self.proxied_port_list[i])] = False
+
 
     def load_config_from_yaml(self, config_yaml):
         try:
@@ -109,6 +122,17 @@ class WebSocketProxpy:
             return True
         except TypeError:
             return False
+
+    def run(self, config_yaml):
+        is_config_loaded = self.load_config_from_yaml(config_yaml)
+
+        if not is_config_loaded:
+            base.fatal_fail("Unable to load config file, can't parse the YAML!")
+
+        server = websockets.serve(self.proxy_dispatcher, self.host, self.port, ping_interval=20, ping_timeout=20, close_timeout=10)
+        self.logger.info("Initializing PROXY SERVER")
+        asyncio.get_event_loop().run_until_complete(server)
+        asyncio.get_event_loop().run_forever()
 
     @asyncio.coroutine
     def proxy_dispatcher(self, proxy_web_socket, path):
@@ -203,13 +227,12 @@ class WebSocketProxpy:
             yield from self.send_to_web_socket_connection_aware(proxy_web_socket, proxied_web_socket, request_for_proxy)
 
             connection.request_count += 1
-
-            if connection.request_count > self.requests_per_connection:
-                connection_limit_error = "Unable to proxy request, connection exceeds config limit of [" + str(
-                    self.requests_per_connection) + "] requests per connection."
-                self.logger.error(connection_limit_error)
-                #yield from proxy_web_socket.send(get_json_status_response("error", connection_limit_error))
-                return
+            # if connection.request_count > self.requests_per_connection:
+            #     connection_limit_error = "Unable to proxy request, connection exceeds config limit of [" + str(
+            #         self.requests_per_connection) + "] requests per connection."
+            #     self.logger.error(connection_limit_error)
+            #     #yield from proxy_web_socket.send(get_json_status_response("error", connection_limit_error))
+            #     return
 
             self.logger.info(
                 "Sending request [" + str(connection.request_count) + "] to PROXIED SERVER [" + request_for_proxy + "]")
@@ -289,6 +312,17 @@ class WebSocketProxpy:
             self.logger.info("Send the Request to PROXIED SERVER error" )
             # proxy_web_socket.send(get_json_status_response("ok", "Proxied connection closed."))
 
+
+    def respond_with_proxy_connect_error(self, proxied_url_value, proxy_web_socket):
+            error_message = "Unable to connect with proxied url [" + proxied_url_value + "]. Connection closed."
+            #yield from proxy_web_socket.send(get_json_status_response("error", error_message + "'}"))
+            self.logger.error(error_message)
+
+    def get_credentials(self, web_socket):
+        credentials = yield from web_socket.recv()
+        self.logger.info("Credentials received from CLIENT [" + credentials + "]")
+
+        return credentials
 
 class WebSocketConnection:
     request_count = 0
