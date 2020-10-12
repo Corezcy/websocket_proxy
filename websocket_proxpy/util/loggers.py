@@ -12,11 +12,11 @@ class ConsoleDebugLogger():
         logging_stream_handler = logging.StreamHandler()
 
         # 控制日志输出到文件
-        file_handler_all = logging.FileHandler('output_log.log')
+        file_handler_all = logging.FileHandler('output_log_all.log')
         file_handler_all.setLevel(logging.DEBUG)
 
         # 控制error日志输出到文件
-        file_handler_error = logging.FileHandler('error.log')
+        file_handler_error = logging.FileHandler('error_log.log')
         file_handler_error.setLevel(logging.ERROR)
 
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')

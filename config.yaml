@@ -7,7 +7,10 @@ configuration:
         listenHost: "localhost"
         port: "1111"
         requestsPerConnection: "10000"
-        proxiedUrl: "ws://10.78.4.163:9192"
+        proxiedUrlList:
+        - ws://10.78.4.163:9192
+        - ws://10.78.4.163:9193
+        proxiedUrl: "ws://10.78.4.163:9193"
     transportConfiguration:
         sendPrefix: "" # these allow a prefix and suffix on all arbitrary requests to proxied server
         sendSuffix: ""
