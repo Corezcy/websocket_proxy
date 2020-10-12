@@ -1,115 +1,295 @@
-# System imports.
-from datetime import datetime
-from gzip import GzipFile
-from io import BytesIO
-from threading import Thread
-from time import sleep
-from json import loads
-from json import dumps
-from os import makedirs
+from websocket_proxpy.util import base
+try:
+    import websockets
+except ImportError:
+    base.fatal_fail("'websockets' library required (pip install websockets). Exiting.")
+from websocket_proxpy.util.jsonutils import get_json_status_response
+import asyncio
+import json
 
-# Third-party imports.
-from flask import Flask
-from flask_sockets import Sockets
-from geventwebsocket.handler import WebSocketHandler
-from gevent.pywsgi import WSGIServer
-from websocket import WebSocketException
-from websocket import WebSocketApp
+class WebSocketProxpy:
+    logger = None
+    host = "localhost"
+    port = 1111
+    serverType = "OPEN_URL"
+    proxied_url = ""
+    password = ""
+    send_suffix = ""
+    send_prefix = ""
+    requests_per_connection = 10000
 
-# Configuration.
-# This is the intended server's URI.
-REAL_SERVER_URI = 'ws://10.78.4.163:8181'
+    def __init__(self, logger):
+        self.logger = logger
 
-def get_timestamp():
-    return datetime.now().strftime('%I.%M.%S.%f %p')
+    def is_open_url_server(self):
+        return self.serverType == "OPEN_URL"
 
-def parse_message(message):
-    if type(message) is bytes:
-        if message[0:3] == b'\x1f\x8b\x08':
-            gzip_buffer = BytesIO(message)
-            gzip_file = GzipFile(fileobj=gzip_buffer)
-            message = gzip_file.read()
+    def is_forced_url_server(self):
+        return self.serverType == "FORCED_URL"
+
+    def is_forced_url_no_password_server(self):
+        return self.serverType == "FORCED_URL_NO_PASSWORD"
+
+    def authenticate(self, connection):
+        # expects {"password": "12345"}
+        try:
+            parsed_json = json.loads(connection.credentials)
+        except ValueError:
+            return False
+
+        if 'password' not in parsed_json:
+            return False
+        elif parsed_json['password'] != self.password:
+            return False
         else:
-            raise BufferError('Got unexpected binary data!')
+            self.logger.info("User authenticated.")
+            return True
 
-    return dumps(loads(message), indent='\t')
+    @staticmethod
+    def parse_destination_url(json_content):
+        # expects {"url": "ws://localhost:8081/test"}
+        try:
+            parsed_json = json.loads(json_content)
+        except ValueError:
+            return None
 
-class ServerEventHandler:
-    def  __init__(self, client_web_socket):
-        self.client_web_socket = client_web_socket
+        if 'url' not in parsed_json:
+            return None
+        return parsed_json['url']
 
-    def on_message(self, web_socket, message):
-        self.client_web_socket.send(message)
-        message = parse_message(message)
-        timestamp = get_timestamp()
+    @staticmethod
+    def is_close(json_content):
+        # expects {"action": "close"}
+        try:
+            parsed_json = json.loads(json_content)
+        except ValueError:
+            return None
 
-        makedirs('packets', exist_ok=True)
+        if 'action' not in parsed_json:
+            return False
 
-        with open('packets/{} - Server Packet.json'.format(timestamp), 'w') as file:
-            file.write(message)
-            file.write('\n')
+        if parsed_json['action'] != "close":
+            return False
 
-        print('{} - Server Packet:'.format(timestamp))
-        print(message)
+        return True
 
-    def on_open(self, web_socket):
-        print('{} - WebSocket Proxy: Connected to server!'.format(get_timestamp()))
+    def load_authentication_config_from_yaml(self, config_yaml):
+        authentication_configuration = config_yaml['configuration']['authenticationConfiguration']
+        self.password = authentication_configuration['password']
 
+    def load_transport_config_from_yaml(self, config_yaml):
+        transport_configuration = config_yaml['configuration']['transportConfiguration']
+        self.send_prefix = transport_configuration['sendPrefix']
+        self.send_suffix = transport_configuration['sendSuffix']
 
-    def on_close(self, web_socket):
-        print('{} - WebSocket Proxy: Disconnected from server!'.format(get_timestamp()))
+    def load_server_config_from_yaml(self, config_yaml):
+        server_config = config_yaml['configuration']['serverConfiguration']
 
-        if not self.client_web_socket.closed:
-            print('{} - WebSocket Proxy: Disconnecting client...'.format(get_timestamp()))
-            self.client_web_socket.close()
-            print('{} - WebSocket Proxy: Disconnected from client!'.format(get_timestamp()))
+        self.host = server_config['listenHost']
+        self.port = int(server_config['port'])
+        self.serverType = server_config['type']
+        self.requests_per_connection = int(server_config['requestsPerConnection'])
+        if not self.has_valid_server_type():
+            self.logger.error("Server type value [" + self.serverType + "] in config is invalid. Can't start server")
+            base.fatal_fail(None)
 
-application = Flask(__name__)
-sockets = Sockets(application)
+        if self.is_forced_url_server() or self.is_forced_url_no_password_server():
+            self.proxied_url = server_config['proxiedUrl']
 
-@sockets.route('/')
-def proxy(client_web_socket):
-    print('{} - WebSocket Proxy: Connected to client!'.format(get_timestamp()))
+            if self.proxied_url is None or self.proxied_url == "":
+                error_message = "Proxied url in config missing--required when running in FORCED_URL mode."
+                self.logger.error(error_message)
+                base.fatal_fail(None)
 
-    # We need to establish a connection with the real server.
-    server_event_handler = ServerEventHandler(client_web_socket)
-    server_web_socket_app = WebSocketApp(
-        REAL_SERVER_URI,
-        on_open=server_event_handler.on_open,
-        on_message=server_event_handler.on_message,
-        on_close=server_event_handler.on_close)
-    server_web_socket_thread = Thread(target=server_web_socket_app.run_forever)
-    server_web_socket_thread.start()
-    server_web_socket = server_web_socket_app.sock
+    def load_config_from_yaml(self, config_yaml):
+        try:
+            self.load_server_config_from_yaml(config_yaml)
+            self.load_authentication_config_from_yaml(config_yaml)
+            self.load_transport_config_from_yaml(config_yaml)
+            return True
+        except TypeError:
+            return False
 
-    while not server_web_socket.connected:
-        print('{} - WebSocket Proxy: Connecting to server...'.format(get_timestamp()))
-        sleep(1)
+    @asyncio.coroutine
+    def proxy_dispatcher(self, proxy_web_socket, path):
+        self.logger.info("Connection established with CLIENT")
 
-    # The server is connected, let's start listening to the client.
-    while not client_web_socket.closed:
-        message = client_web_socket.receive()
+        connection = WebSocketConnection()
 
-        if message:
-            server_web_socket.send(message)
+        if not self.is_forced_url_no_password_server():
 
-            message = parse_message(message)
-            timestamp = get_timestamp()
+            #proxy已经接受到client发送的东西
+            connection.credentials = yield from self.get_credentials(proxy_web_socket)
 
-            makedirs('packets', exist_ok=True)
+            if self.authenticate(connection):
+                authenticated_message = "Authenticated " + self.get_post_authentication_directions()
+                #yield from proxy_web_socket.send(get_json_status_response("ok", authenticated_message + "'}"))
+                if self.is_open_url_server():
+                    proxied_url_value = yield from self.get_proxy_url_from_client(proxy_web_socket)
 
-            with open('packets/{} - Client Packet.json'.format(timestamp), 'w') as file:
-                file.write(message)
-                file.write('\n')
+                    if proxied_url_value is None:
+                        return
+                else:
+                    proxied_url_value = self.proxied_url
 
-            print('{} - Client Packet:'.format(timestamp))
-            print(message)
+                proxied_web_socket = yield from self.connect_to_proxy_server(proxied_url_value, proxy_web_socket)
+                yield from self.process_arbitrary_requests(proxy_web_socket, proxied_web_socket, connection,proxied_url_value)
+            else:
+                auth_failed_message = "Authentication failed. Password invalid [" + connection.credentials + "]"
+                yield from proxy_web_socket.send(get_json_status_response("error", auth_failed_message + "'}"))
+                self.logger.warning("CLIENT authentication credentials [" + connection.credentials + "] rejected.")
         else:
-            print('{} - WebSocket Proxy: Disconnected from client!'.format(get_timestamp()))
-            print('{} - WebSocket Proxy: Disconnecting server...'.format(get_timestamp()))
-            server_web_socket.close()
+            proxied_url_value = self.proxied_url
+            proxied_web_socket = yield from self.connect_to_proxy_server(proxied_url_value, proxy_web_socket)
+            yield from self.process_arbitrary_requests(proxy_web_socket, proxied_web_socket, connection,proxied_url_value)
 
-if __name__ == '__main__':
-    server = WSGIServer(('0.0.0.0', 1111), application, handler_class=WebSocketHandler)
-    print('{} - WebSocket Proxy: Waiting for client...'.format(get_timestamp()))
-    server.serve_forever()
+
+
+    def respond_with_proxy_connect_error(self, proxied_url_value, proxy_web_socket):
+            error_message = "Unable to connect with proxied url [" + proxied_url_value + "]. Connection closed."
+            #yield from proxy_web_socket.send(get_json_status_response("error", error_message + "'}"))
+            self.logger.error(error_message)
+
+    def get_credentials(self, web_socket):
+        credentials = yield from web_socket.recv()
+        self.logger.info("Credentials received from CLIENT [" + credentials + "]")
+
+        return credentials
+
+    def run(self, config_yaml):
+        is_config_loaded = self.load_config_from_yaml(config_yaml)
+
+        if not is_config_loaded:
+            base.fatal_fail("Unable to load config file, can't parse the YAML!")
+
+        server = websockets.serve(self.proxy_dispatcher, self.host, self.port,ping_interval=20,ping_timeout=20, close_timeout=10)
+        self.logger.info("Initializing PROXY SERVER")
+        asyncio.get_event_loop().run_until_complete(server)
+        asyncio.get_event_loop().run_forever()
+
+    def process_arbitrary_requests(self, proxy_web_socket, proxied_web_socket, connection,proxied_url_value):
+
+        while not proxied_web_socket.closed:
+            # request_for_proxy = yield from proxy_web_socket.recv()
+
+            try:
+                request_for_proxy = yield from proxy_web_socket.recv()
+                # request_for_proxy = yield from asyncio.wait_for(proxy_web_socket.recv(), timeout=10)
+            except websockets.exceptions.ConnectionClosed:
+                 self.logger.error("websockets.exceptions.ConnectionClosed")
+                 if proxied_web_socket.closed:
+                     self.logger.warning("proxied_web_socket is closed")
+                 self.logger.warning("proxied_web_socket is open")
+
+                 yield from proxied_web_socket.wait_closed()
+
+                 if proxied_web_socket.closed:
+                     self.logger.warning("proxied_web_socket is closed")
+                 self.logger.warning("proxied_web_socket is open")
+                 break
+
+            if self.is_close(request_for_proxy):
+                self.logger.info("Received CLOSE from CLIENT [" + request_for_proxy + "]")
+                yield from proxy_web_socket.send('{"action": "closed"}')
+                yield from proxied_web_socket.close()
+                yield from proxy_web_socket.wait_closed()
+                return
+
+            self.logger.info("Received request from CLIENT [" + request_for_proxy + "]")
+
+
+            if self.send_prefix is not None and self.send_suffix is not None:
+                request_for_proxy = self.send_prefix + request_for_proxy + self.send_suffix
+            yield from self.send_to_web_socket_connection_aware(proxy_web_socket, proxied_web_socket, request_for_proxy)
+
+            connection.request_count += 1
+
+            if connection.request_count > self.requests_per_connection:
+                connection_limit_error = "Unable to proxy request, connection exceeds config limit of [" + str(
+                    self.requests_per_connection) + "] requests per connection."
+                self.logger.error(connection_limit_error)
+                #yield from proxy_web_socket.send(get_json_status_response("error", connection_limit_error))
+                return
+
+            self.logger.info(
+                "Sending request [" + str(connection.request_count) + "] to PROXIED SERVER [" + request_for_proxy + "]")
+
+            try:
+                response_from_proxy = yield from proxied_web_socket.recv()
+            except websockets.exceptions.ConnectionClosed:
+                self.logger.error("ConnectionClosedError1")
+                yield from proxied_web_socket.close()
+                proxied_web_socket = yield from websockets.connect(proxied_url_value,ping_interval=20,ping_timeout=20, close_timeout=10)
+                yield from self.send_to_web_socket_connection_aware(proxy_web_socket, proxied_web_socket,
+                                                                    request_for_proxy)
+                response_from_proxy = yield from proxied_web_socket.recv()
+            self.logger.info("Received response from PROXIED SERVER [" + response_from_proxy + "]")
+
+            # if proxy_web_socket.closed:
+            #     self.logger.log("proxy_web_socket is closed")
+            # self.logger.log("proxy_web_socket is open")
+            # if proxied_web_socket.closed:
+            #     self.logger.log("proxied_web_socket is closed")
+            # self.logger.log("proxied_web_socket is open")
+
+            try:
+                yield from proxy_web_socket.send(response_from_proxy)
+            except websockets.exceptions.ConnectionClosed:
+                self.logger.error("ConnectionClosedError2")
+                break
+
+            self.logger.info("Sending response to CLIENT [" + response_from_proxy + "]")
+
+        if proxied_web_socket.closed:
+            self.logger.warning("proxied_web_socket is closed")
+        self.logger.warning("proxied_web_socket is open")
+
+    def get_post_authentication_directions(self):
+        authentication_message = "Authenticated. "
+
+        if self.is_forced_url_server():
+            authentication_message += "Socket open for arbitrary proxy requests."
+        else:
+            authentication_message += "Supply URL."
+
+        return authentication_message
+
+    def has_valid_server_type(self):
+        return self.is_open_url_server() or self.is_forced_url_server() or self.is_forced_url_no_password_server()
+
+    def get_proxy_url_from_client(self, proxy_web_socket, ):
+        proxied_url_json = yield from proxy_web_socket.recv()
+        proxied_url_value = self.parse_destination_url(proxied_url_json)
+        self.logger.info("PROXIED SERVER url received [" + proxied_url_value + "]")
+
+        if proxied_url_value is None:
+            url_missing_message = "Couldn't establish proxy. Url not provided in [" + proxied_url_json + "]"
+
+            # yield from proxy_web_socket.send(get_json_status_response("error", url_missing_message + "'}"))
+
+        return proxied_url_value
+
+    def connect_to_proxy_server(self, proxied_url_value, proxy_web_socket):
+        try:
+            proxied_web_socket = yield from websockets.connect(proxied_url_value,ping_interval=20,ping_timeout=20, close_timeout=10)
+        except ConnectionRefusedError:
+            yield from self.respond_with_proxy_connect_error(proxied_url_value, proxy_web_socket)
+            return
+        self.logger.info("Established proxied connection with PROXIED SERVER [" + proxied_url_value + "]")
+
+        connection_open_message = "Proxied connection [" + proxied_url_value + "] open for arbitrary requests.'"
+        #yield from proxy_web_socket.send(get_json_status_response("ok", connection_open_message))
+
+        return proxied_web_socket
+
+    def send_to_web_socket_connection_aware(self, proxy_web_socket, proxied_web_socket, request_for_proxy):
+        try:
+            yield from proxied_web_socket.send(request_for_proxy)
+        except websockets.exceptions.InvalidState:
+            self.logger.info("Send the Request to PROXIED SERVER error" )
+            # proxy_web_socket.send(get_json_status_response("ok", "Proxied connection closed."))
+
+
+class WebSocketConnection:
+    request_count = 0
+    credentials = ""

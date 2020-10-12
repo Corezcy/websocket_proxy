@@ -1,10 +1,11 @@
 import unittest
 import yaml
-from websocket_proxpy.proxy import WebSocketProxpy, WebSocketConnection
+from demo import WebSocketProxpy, WebSocketConnection
 from websocket_proxpy.util.loggers import ConsoleDebugLogger
 
 
 class WebSocketProxpyTests(unittest.TestCase):
+
     web_socket_proxpy = WebSocketProxpy(ConsoleDebugLogger())
 
     def setUp(self):
@@ -25,11 +26,11 @@ class WebSocketProxpyTests(unittest.TestCase):
         self.assertEquals("", self.web_socket_proxpy.send_suffix)
         self.assertTrue(self.web_socket_proxpy.load_config_from_yaml(yaml.load(open("testConfig.yaml"))))
         self.assertEquals("gogol", self.web_socket_proxpy.password)
-        self.assertEquals(7777, self.web_socket_proxpy.port)
-        self.assertEquals("192.168.1.10", self.web_socket_proxpy.host)
-        self.assertEquals("FORCED_URL", self.web_socket_proxpy.serverType)
-        self.assertEquals(500, self.web_socket_proxpy.requests_per_connection)
-        self.assertEquals("ws://localhost:8080/test", self.web_socket_proxpy.proxied_url)
+        self.assertEquals(1111, self.web_socket_proxpy.port)
+        self.assertEquals("localhost", self.web_socket_proxpy.host)
+        self.assertEquals("FORCED_URL_NO_PASSWORD", self.web_socket_proxpy.serverType)
+        self.assertEquals(10000, self.web_socket_proxpy.requests_per_connection)
+        self.assertEquals("ws://10.78.4.163:9192", self.web_socket_proxpy.proxied_url)
         self.assertEquals("prefix", self.web_socket_proxpy.send_prefix)
         self.assertEquals("suffix", self.web_socket_proxpy.send_suffix)
 

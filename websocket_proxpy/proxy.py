@@ -7,7 +7,6 @@ from websocket_proxpy.util.jsonutils import get_json_status_response
 import asyncio
 import json
 
-
 class WebSocketProxpy:
     logger = None
     host = "localhost"
