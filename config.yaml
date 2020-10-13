@@ -10,6 +10,7 @@ configuration:
         proxiedPortList:
         - 9192
         - 9193
+        - 9194
         proxiedUrl: "ws://10.78.4.163:"
     transportConfiguration:
         sendPrefix: "" # these allow a prefix and suffix on all arbitrary requests to proxied server
