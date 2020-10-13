@@ -102,5 +102,6 @@ def send_to_web_socket_connection_aware(self, proxy_web_socket, proxied_web_sock
 
 ## 使用说明
 1、在`config.yaml`中按照注释说明修改`host`、`port`、`proxiedPortList`
+
 2、当使用结束后，发送`{"action": "close"}`到代理服务器，代理服务器执行关闭`client--proxy`和`proxy--server`的指令。
 
