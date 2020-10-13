@@ -79,14 +79,10 @@ def proxy_dispatcher(self, proxy_web_socket, path):**
 > 处理`client--proxy--server`之间的请求(调用process_arbitrary_requests)
 
 **def process_arbitrary_requests(self, proxy_web_socket, proxied_web_socket, connection):**
-> 负责四部分任务：
-
-> part 1:从client接收请求;
-
->part 2:proxy发送请求到server;
-
->part 3:proxy接受server返回的数据;
-
+>负责四部分任务：  
+>part 1:从client接收请求;  
+>part 2:proxy发送请求到server;  
+>part 3:proxy接受server返回的数据;  
 >part 4:proxy返回数据到client
 
 
