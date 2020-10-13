@@ -18,7 +18,7 @@ class WebSocketProxpyTests(unittest.TestCase):
     def test_load_config_from_yam_when_filled(self):
         self.assertEquals("", self.web_socket_proxpy.password)
         self.assertEquals(1111, self.web_socket_proxpy.port)
-        self.assertEquals("localhost", self.web_socket_proxpy.host)
+        self.assertEquals("0.0.0.0", self.web_socket_proxpy.host)
         self.assertEquals("OPEN_URL", self.web_socket_proxpy.serverType)
         self.assertEquals(10000, self.web_socket_proxpy.requests_per_connection)
         self.assertEquals("", self.web_socket_proxpy.proxied_url)
@@ -27,7 +27,7 @@ class WebSocketProxpyTests(unittest.TestCase):
         self.assertTrue(self.web_socket_proxpy.load_config_from_yaml(yaml.load(open("testConfig.yaml"))))
         self.assertEquals("gogol", self.web_socket_proxpy.password)
         self.assertEquals(1111, self.web_socket_proxpy.port)
-        self.assertEquals("localhost", self.web_socket_proxpy.host)
+        self.assertEquals("0.0.0.0", self.web_socket_proxpy.host)
         self.assertEquals("FORCED_URL_NO_PASSWORD", self.web_socket_proxpy.serverType)
         self.assertEquals(10000, self.web_socket_proxpy.requests_per_connection)
         self.assertEquals("ws://10.78.4.163:9192", self.web_socket_proxpy.proxied_url)

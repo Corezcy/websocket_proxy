@@ -12,7 +12,7 @@ is_port_used = {}
 class WebSocketProxpy:
 
     logger = None
-    host = "localhost"
+    host = ""
     port = 0
     serverType = "OPEN_URL"
     proxied_url = ""
@@ -56,7 +56,7 @@ class WebSocketProxpy:
 
     @staticmethod
     def parse_destination_url(json_content):
-        # expects {"url": "ws://localhost:8081/test"}
+        # expects {"url": "ws://0.0.0.0:8081/test"}
         try:
             parsed_json = json.loads(json_content)
         except ValueError:
@@ -116,7 +116,7 @@ class WebSocketProxpy:
                 base.fatal_fail(None)
 
             for i in range(len(self.proxied_port_list)):
-                is_port_used[str(self.proxied_port_list[i])] = False
+                is_port_used[self.proxied_port_list[i]] = False
 
 
     def load_config_from_yaml(self, config_yaml):
@@ -171,13 +171,12 @@ class WebSocketProxpy:
                 self.logger.warning("CLIENT authentication credentials [" + connection.credentials + "] rejected.")
         else:
             for i in range(len(self.proxied_port_list)):
-                if not is_port_used.get(str(self.proxied_port_list[i])):
-
-                    is_port_used[str(self.proxied_port_list[i])] = True
-                    proxied_url_value = self.proxied_url + str(self.proxied_port_list[i])
+                if not is_port_used.get(self.proxied_port_list[i]):
+                    is_port_used[self.proxied_port_list[i]] = True
+                    proxied_url_value = self.proxied_url + self.proxied_port_list[i]
                     proxied_web_socket = yield from self.connect_to_proxy_server(proxied_url_value, proxy_web_socket)
                     yield from self.process_arbitrary_requests(proxy_web_socket, proxied_web_socket, connection,self.proxied_port_list[i])
-                    is_port_used[str(self.proxied_port_list[i])] = False
+                    is_port_used[self.proxied_port_list[i]] = False
                     break
                 if i == len(self.proxied_port_list)-1:
                     try:
@@ -186,6 +185,7 @@ class WebSocketProxpy:
                         self.logger.error("Sending receive ERROR to Client ERROR!")
                     yield from proxy_web_socket.wait_closed()
                     self.logger.warning("PROXIED SERVER's whole ports are using NOW!")
+
 
             '''
             如果所有端口都被占用，设置返回JSON数据
@@ -202,7 +202,6 @@ class WebSocketProxpy:
 
         while not proxied_web_socket.closed:
             # request_for_proxy = yield from proxy_web_socket.recv()
-
             try:
                 request_for_proxy = yield from proxy_web_socket.recv()
                 # request_for_proxy = yield from asyncio.wait_for(proxy_web_socket.recv(), timeout=10)
@@ -215,8 +214,8 @@ class WebSocketProxpy:
 
                  yield from proxied_web_socket.wait_closed()
 
-                 self.logger.info("PROIED SERVER [ "+proxied_web_socket.host +":"+ str(proxied_web_socket.port)+" ] is closed")
-                 is_port_used[str(proxied_port)] = False
+                 self.logger.warning("PROIED SERVER [ ws://"+proxied_web_socket.host +":"+ str(proxied_web_socket.port)+" ] is closed")
+                 is_port_used[proxied_port] = False
 
                  break
 
@@ -226,9 +225,8 @@ class WebSocketProxpy:
                 yield from proxy_web_socket.wait_closed()
                 self.logger.warning("PROXY SERVER is closed!")
                 yield from proxied_web_socket.close()
-
-                is_port_used[str(proxied_port)] = False
-                self.logger.warning("PROIED SERVER [ "+proxied_web_socket.host +":"+ str(proxied_web_socket.port)+" ] is closed")
+                is_port_used[proxied_port] = False
+                self.logger.warning("PROIED SERVER [ ws://"+proxied_web_socket.host +":"+ str(proxied_web_socket.port)+" ] is closed")
                 return
 
             self.logger.info("Received request from CLIENT [" + request_for_proxy + "]")
@@ -251,7 +249,7 @@ class WebSocketProxpy:
                 self.logger.warning("PROIED SERVER [ " + proxied_web_socket.host + ":" + str(proxied_web_socket.port) + " ] is closed")
                 yield from proxy_web_socket.send('{"receive_error": "This port is using by someone!"}')
                 yield from proxy_web_socket.close()
-                is_port_used[str(proxied_port)] = False
+                is_port_used[proxied_port] = False
                 self.logger.warning("PROXY SERVER is closed!")
                 return
                 # proxied_web_socket = yield from websockets.connect(proxied_url_value,ping_interval=20,ping_timeout=20, close_timeout=10)

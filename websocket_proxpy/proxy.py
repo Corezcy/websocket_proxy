@@ -9,7 +9,7 @@ import json
 
 class WebSocketProxpy:
     logger = None
-    host = "localhost"
+    host = "0.0.0.0"
     port = 1111
     serverType = "OPEN_URL"
     proxied_url = "10.78.4.163:8181"
@@ -47,7 +47,7 @@ class WebSocketProxpy:
 
     @staticmethod
     def parse_destination_url(json_content):
-        # expects {"url": "ws://localhost:8081/test"}
+        # expects {"url": "ws://0.0.0.0:8081/test"}
         try:
             parsed_json = json.loads(json_content)
         except ValueError:

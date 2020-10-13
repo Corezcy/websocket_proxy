@@ -4,13 +4,13 @@ configuration:
     serverConfiguration:
         # type can be OPEN_URL or FORCED_URL or FORCED_URL_NO_PASSWORD - later two need proxiedUrl uncommented
         type: "FORCED_URL_NO_PASSWORD"
-        listenHost: "localhost"
+        listenHost: "0.0.0.0"
         port: "1111"
         requestsPerConnection: "10000"
         proxiedPortList:
-        - 9192
-        - 9193
-        - 9194
+        - "9192"
+        - "9193"
+        - "9194"
         proxiedUrl: "ws://10.78.4.163:"
     transportConfiguration:
         sendPrefix: "" # these allow a prefix and suffix on all arbitrary requests to proxied server
