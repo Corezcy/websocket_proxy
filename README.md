@@ -3,11 +3,9 @@
 
 ## 配置要求
 
-Python 3 (tested on Python 3.7)
-
-The 'websockets' module (`pip install websockets`)
-
-The 'yaml' module (`pip install pyyaml`)
+Python 3 (tested on Python 3.7)  
+The 'websockets' module (`pip install websockets`)  
+The 'yaml' module (`pip install pyyaml`)  
 
 ## 结构说明
 
