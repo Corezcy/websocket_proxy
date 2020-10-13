@@ -1,21 +1,27 @@
-from websocket_proxpy.util import base
+from websocket_proxy.util import base
 try:
     import websockets
 except ImportError:
     base.fatal_fail("'websockets' library required (pip install websockets). Exiting.")
-from websocket_proxpy.util.jsonutils import get_json_status_response
+from websocket_proxy.util.jsonutils import get_json_status_response
 import asyncio
 import json
 
+#dict:端口是否被占用,{"port":bool}
+is_port_used = {}
+
 class WebSocketProxpy:
+
     logger = None
-    host = "0.0.0.0"
-    port = 1111
+    host = ""
+    port = 0
     serverType = "OPEN_URL"
-    proxied_url = "10.78.4.163:8181"
+    proxied_url = ""
     password = ""
     send_suffix = ""
     send_prefix = ""
+    proxied_port_list = []
+
     requests_per_connection = 10000
 
     def __init__(self, logger):
@@ -42,7 +48,7 @@ class WebSocketProxpy:
         elif parsed_json['password'] != self.password:
             return False
         else:
-            self.logger.log("User authenticated.")
+            self.logger.info("User authenticated.")
             return True
 
     @staticmethod
@@ -90,16 +96,25 @@ class WebSocketProxpy:
         self.serverType = server_config['type']
         self.requests_per_connection = int(server_config['requestsPerConnection'])
         if not self.has_valid_server_type():
-            self.logger.log("Server type value [" + self.serverType + "] in config is invalid. Can't start server")
+            self.logger.error("Server type value [" + self.serverType + "] in config is invalid. Can't start server")
             base.fatal_fail(None)
 
         if self.is_forced_url_server() or self.is_forced_url_no_password_server():
             self.proxied_url = server_config['proxiedUrl']
+            self.proxied_port_list = server_config['proxiedPortList']
 
             if self.proxied_url is None or self.proxied_url == "":
                 error_message = "Proxied url in config missing--required when running in FORCED_URL mode."
-                self.logger.log(error_message)
+                self.logger.error(error_message)
                 base.fatal_fail(None)
+            if self.proxied_port_list is None :
+                error_message = "Proxied url in config missing--required when running in FORCED_URL mode."
+                self.logger.error(error_message)
+                base.fatal_fail(None)
+
+            for i in range(len(self.proxied_port_list)):
+                is_port_used[self.proxied_port_list[i]] = False
+
 
     def load_config_from_yaml(self, config_yaml):
         try:
@@ -110,10 +125,20 @@ class WebSocketProxpy:
         except TypeError:
             return False
 
+    def run(self,config_yaml):
+        is_config_loaded = self.load_config_from_yaml(config_yaml)
+
+        if not is_config_loaded:
+            base.fatal_fail("Unable to load config file, can't parse the YAML!")
+
+        server = websockets.serve(self.proxy_dispatcher, self.host, self.port, ping_interval=20, ping_timeout=20, close_timeout=10)
+        self.logger.info("Initializing PROXY SERVER")
+        asyncio.get_event_loop().run_until_complete(server)
+        asyncio.get_event_loop().run_forever()
+
     @asyncio.coroutine
     def proxy_dispatcher(self, proxy_web_socket, path):
-        self.logger.log("Connection established with CLIENT")
-
+        self.logger.info("Connection established with CLIENT")
         connection = WebSocketConnection()
 
         if not self.is_forced_url_no_password_server():
@@ -132,117 +157,128 @@ class WebSocketProxpy:
                 else:
                     proxied_url_value = self.proxied_url
 
+                '''
+                未修改
+                '''
                 proxied_web_socket = yield from self.connect_to_proxy_server(proxied_url_value, proxy_web_socket)
                 yield from self.process_arbitrary_requests(proxy_web_socket, proxied_web_socket, connection,proxied_url_value)
             else:
                 auth_failed_message = "Authentication failed. Password invalid [" + connection.credentials + "]"
                 yield from proxy_web_socket.send(get_json_status_response("error", auth_failed_message + "'}"))
-                self.logger.log("CLIENT authentication credentials [" + connection.credentials + "] rejected.")
+                self.logger.warning("CLIENT authentication credentials [" + connection.credentials + "] rejected.")
         else:
-            proxied_url_value = self.proxied_url
-            proxied_web_socket = yield from self.connect_to_proxy_server(proxied_url_value, proxy_web_socket)
-            yield from self.process_arbitrary_requests(proxy_web_socket, proxied_web_socket, connection,proxied_url_value)
+            for i in range(len(self.proxied_port_list)):
+                #检测端口是否被占用
+                if not is_port_used.get(self.proxied_port_list[i]):
+                    is_port_used[self.proxied_port_list[i]] = True
+                    proxied_url_value = self.proxied_url + self.proxied_port_list[i]
+                    proxied_web_socket = yield from self.connect_to_proxy_server(proxied_url_value, proxy_web_socket)
+                    yield from self.process_arbitrary_requests(proxy_web_socket, proxied_web_socket, connection)
+                    is_port_used[self.proxied_port_list[i]] = False
+                    break
+                #如果所有端口被占用，返回{"receive_error":"..."}，引发client异常
+                if i == len(self.proxied_port_list) - 1:
+                    try:
+                        yield from proxy_web_socket.send('{"receive_error": "PROXIED SERVER''s whole ports are using NOW!"}')
+                    except websockets.exceptions.ConnectionClosed:
+                        self.logger.error("Sending receive ERROR to Client ERROR!")
+                        break
+                    yield from proxy_web_socket.wait_closed()
+                    self.logger.warning("PROXIED SERVER's whole ports are using NOW!")
 
 
 
-    def respond_with_proxy_connect_error(self, proxied_url_value, proxy_web_socket):
-            error_message = "Unable to connect with proxied url [" + proxied_url_value + "]. Connection closed."
-            #yield from proxy_web_socket.send(get_json_status_response("error", error_message + "'}"))
-            self.logger.log(error_message)
-
-    def get_credentials(self, web_socket):
-        credentials = yield from web_socket.recv()
-        self.logger.log("Credentials received from CLIENT [" + credentials + "]")
-
-        return credentials
-
-    def run(self, config_yaml):
-        is_config_loaded = self.load_config_from_yaml(config_yaml)
-
-        if not is_config_loaded:
-            base.fatal_fail("Unable to load config file, can't parse the YAML!")
-
-        server = websockets.serve(self.proxy_dispatcher, self.host, self.port)
-        self.logger.log("Initializing PROXY SERVER")
-        asyncio.get_event_loop().run_until_complete(server)
-        asyncio.get_event_loop().run_forever()
-
-    def process_arbitrary_requests(self, proxy_web_socket, proxied_web_socket, connection,proxied_url_value):
+    def process_arbitrary_requests(self, proxy_web_socket, proxied_web_socket, connection):
 
         while not proxied_web_socket.closed:
             # request_for_proxy = yield from proxy_web_socket.recv()
-
+            '''
+            part 1:从client接收数据
+            '''
             try:
                 request_for_proxy = yield from proxy_web_socket.recv()
                 # request_for_proxy = yield from asyncio.wait_for(proxy_web_socket.recv(), timeout=10)
             except websockets.exceptions.ConnectionClosed:
-                 self.logger.log("websockets.exceptions.ConnectionClosed")
+                 self.logger.error("Receive response ERROR from PROXY SERVER!")
                  if proxied_web_socket.closed:
-                     self.logger.log("proxied_web_socket is closed")
-                 self.logger.log("proxied_web_socket is open")
+                     self.logger.warning("proxied_web_socket is closed(1)")
+                 else:
+                     self.logger.warning("proxied_web_socket is open(1)")
 
                  yield from proxied_web_socket.wait_closed()
 
-                 if proxied_web_socket.closed:
-                     self.logger.log("proxied_web_socket is closed")
-                 self.logger.log("proxied_web_socket is open")
+                 self.logger.warning("PROIED SERVER [ ws://"+proxied_web_socket.host +":"+ str(proxied_web_socket.port)+" ] is closed")
+                 is_port_used[str(proxied_web_socket.port)] = False
+
                  break
 
+
+            #检测是否收到关闭请求，格式{"action": "closed"}
             if self.is_close(request_for_proxy):
-                self.logger.log("Received CLOSE from CLIENT [" + request_for_proxy + "]")
-                yield from proxy_web_socket.send('{"action": "closed"}')
+                self.logger.info("Received CLOSE from CLIENT [" + request_for_proxy + "]")
+                #关闭proxied_web_socket
                 yield from proxied_web_socket.close()
+                is_port_used[str(proxied_web_socket.port)] = False
+                self.logger.warning("PROIED SERVER [ ws://" + proxied_web_socket.host + ":" + str(proxied_web_socket.port) + " ] is closed")
+
+                # 关闭proxy_web_socket
+                yield from proxy_web_socket.send('{"action": "closed"}')
                 yield from proxy_web_socket.wait_closed()
+                self.logger.warning("PROXY SERVER is closed!")
+
                 return
 
-            self.logger.log("Received request from CLIENT [" + request_for_proxy + "]")
+            self.logger.info("Received request from CLIENT [" + request_for_proxy + "]")
 
+            # if self.send_prefix is not None and self.send_suffix is not None:
+            #     request_for_proxy = self.send_prefix + request_for_proxy + self.send_suffix
 
-            if self.send_prefix is not None and self.send_suffix is not None:
-                request_for_proxy = self.send_prefix + request_for_proxy + self.send_suffix
+            '''
+            part 2:proxy发送数据到server
+            '''
             yield from self.send_to_web_socket_connection_aware(proxy_web_socket, proxied_web_socket, request_for_proxy)
 
+            #计算请求数
             connection.request_count += 1
 
-            if connection.request_count > self.requests_per_connection:
-                connection_limit_error = "Unable to proxy request, connection exceeds config limit of [" + str(
-                    self.requests_per_connection) + "] requests per connection."
-                self.logger.log(connection_limit_error)
-                #yield from proxy_web_socket.send(get_json_status_response("error", connection_limit_error))
-                return
+            self.logger.info("Sending request [" + str(connection.request_count) + "] to PROXIED SERVER [" + request_for_proxy + "]")
 
-            self.logger.log(
-                "Sending request [" + str(connection.request_count) + "] to PROXIED SERVER [" + request_for_proxy + "]")
-
+            '''
+            part 3:proxy接受server返回的数据
+            '''
             try:
                 response_from_proxy = yield from proxied_web_socket.recv()
             except websockets.exceptions.ConnectionClosed:
-                self.logger.log("ConnectionClosedError1")
-                yield from proxied_web_socket.close()
-                proxied_web_socket = yield from websockets.connect(proxied_url_value,ping_interval=60)
-                yield from self.send_to_web_socket_connection_aware(proxy_web_socket, proxied_web_socket,
-                                                                    request_for_proxy)
-                response_from_proxy = yield from proxied_web_socket.recv()
-            self.logger.log("Received response from PROXIED SERVER [" + response_from_proxy + "]")
+                self.logger.error("Receive response ERROR from PROXIED SERVER!")
+                #关闭proxied_web_socket
+                yield from proxied_web_socket.wait_closed()
+                self.logger.warning("PROIED SERVER [ " + proxied_web_socket.host + ":" + str(proxied_web_socket.port) + " ] is closed")
+                #关闭proxy_web_socket
+                yield from proxy_web_socket.close()
+                is_port_used[str(proxied_web_socket.port)] = False
+                self.logger.warning("PROXY SERVER is closed!")
+                return
+                # proxied_web_socket = yield from websockets.connect(proxied_url_value,ping_interval=20,ping_timeout=20, close_timeout=10)
+                # yield from self.send_to_web_socket_connection_aware(proxy_web_socket, proxied_web_socket,
+                #                                                     request_for_proxy)
+                # response_from_proxy = yield from proxied_web_socket.recv()
 
-            # if proxy_web_socket.closed:
-            #     self.logger.log("proxy_web_socket is closed")
-            # self.logger.log("proxy_web_socket is open")
-            # if proxied_web_socket.closed:
-            #     self.logger.log("proxied_web_socket is closed")
-            # self.logger.log("proxied_web_socket is open")
+            self.logger.info("Received response from PROXIED SERVER [" + response_from_proxy + "]")
 
+            '''
+            part 4:proxy返回数据到client
+            '''
             try:
                 yield from proxy_web_socket.send(response_from_proxy)
+                self.logger.info("Sending response to CLIENT [" + response_from_proxy + "]")
             except websockets.exceptions.ConnectionClosed:
-                self.logger.log("ConnectionClosedError2")
+                self.logger.error("Sending response to CLIENT ERROR!")
                 break
 
-            self.logger.log("Sending response to CLIENT [" + response_from_proxy + "]")
-
         if proxied_web_socket.closed:
-            self.logger.log("proxied_web_socket is closed")
-        self.logger.log("proxied_web_socket is open")
+            self.logger.warning("proxied_web_socket is closed(2)")
+        else:
+            self.logger.warning("proxied_web_socket is open(2)")
 
     def get_post_authentication_directions(self):
         authentication_message = "Authenticated. "
@@ -260,7 +296,7 @@ class WebSocketProxpy:
     def get_proxy_url_from_client(self, proxy_web_socket, ):
         proxied_url_json = yield from proxy_web_socket.recv()
         proxied_url_value = self.parse_destination_url(proxied_url_json)
-        self.logger.log("PROXIED SERVER url received [" + proxied_url_value + "]")
+        self.logger.info("PROXIED SERVER url received [" + proxied_url_value + "]")
 
         if proxied_url_value is None:
             url_missing_message = "Couldn't establish proxy. Url not provided in [" + proxied_url_json + "]"
@@ -271,11 +307,11 @@ class WebSocketProxpy:
 
     def connect_to_proxy_server(self, proxied_url_value, proxy_web_socket):
         try:
-            proxied_web_socket = yield from websockets.connect(proxied_url_value,ping_interval=60)
+            proxied_web_socket = yield from websockets.connect(proxied_url_value,ping_interval=20,ping_timeout=20, close_timeout=10)
         except ConnectionRefusedError:
             yield from self.respond_with_proxy_connect_error(proxied_url_value, proxy_web_socket)
             return
-        self.logger.log("Established proxied connection with PROXIED SERVER [" + proxied_url_value + "]")
+        self.logger.info("Established proxied connection with PROXIED SERVER [" + proxied_url_value + "]")
 
         connection_open_message = "Proxied connection [" + proxied_url_value + "] open for arbitrary requests.'"
         #yield from proxy_web_socket.send(get_json_status_response("ok", connection_open_message))
@@ -286,9 +322,20 @@ class WebSocketProxpy:
         try:
             yield from proxied_web_socket.send(request_for_proxy)
         except websockets.exceptions.InvalidState:
-            self.logger.log("Send the Request to PROXIED SERVER error" )
+            self.logger.info("Send the Request to PROXIED SERVER error" )
             # proxy_web_socket.send(get_json_status_response("ok", "Proxied connection closed."))
 
+
+    def respond_with_proxy_connect_error(self, proxied_url_value, proxy_web_socket):
+            error_message = "Unable to connect with proxied url [" + proxied_url_value + "]. Connection closed."
+            #yield from proxy_web_socket.send(get_json_status_response("error", error_message + "'}"))
+            self.logger.error(error_message)
+
+    def get_credentials(self, web_socket):
+        credentials = yield from web_socket.recv()
+        self.logger.info("Credentials received from CLIENT [" + credentials + "]")
+
+        return credentials
 
 class WebSocketConnection:
     request_count = 0

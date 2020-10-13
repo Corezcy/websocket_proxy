@@ -1,7 +1,7 @@
 import unittest
 import yaml
-from demo import WebSocketProxpy, WebSocketConnection
-from websocket_proxpy.util.loggers import ConsoleDebugLogger
+from proxy import WebSocketProxpy, WebSocketConnection
+from websocket_proxy.util.loggers import ConsoleDebugLogger
 
 
 class WebSocketProxpyTests(unittest.TestCase):

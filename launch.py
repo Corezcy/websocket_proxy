@@ -1,8 +1,8 @@
 # from websocket_proxpy.proxy import WebSocketProxpy
-from demo import WebSocketProxpy
+from proxy import WebSocketProxpy
 
-from websocket_proxpy.util import loggers
-from websocket_proxpy.util import base
+from websocket_proxy.util import loggers
+from websocket_proxy.util import base
 
 try:
 	import yaml
