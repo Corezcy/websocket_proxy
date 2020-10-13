@@ -4,9 +4,7 @@
 ## 配置要求
 
 Python 3 (tested on Python 3.7)
-
 The 'websockets' module (`pip install websockets`)
-
 The 'yaml' module (`pip install pyyaml`)
 
 ## 结构说明
@@ -43,8 +41,7 @@ The 'yaml' module (`pip install pyyaml`)
 
 `is_port_used = {}`
 
->字典数据类型，记录端口是否被占用,格式：{"port":bool}
-
+>字典数据类型，记录端口是否被占用，格式：{"port":bool}
 
 -------
 
@@ -83,7 +80,10 @@ def proxy_dispatcher(self, proxy_web_socket, path):**
 
 **def process_arbitrary_requests(self, proxy_web_socket, proxied_web_socket, connection):**
 > 负责四部分任务：
-> part 1:从client接收请求;part 2:proxy发送请求到server;part 3:proxy接受server返回的数据;part 4:proxy返回数据到client
+> part 1:从client接收请求;
+>part 2:proxy发送请求到server;
+>part 3:proxy接受server返回的数据;
+>part 4:proxy返回数据到client
 
 
 def connect_to_proxy_server(self, proxied_url_value, proxy_web_socket):
