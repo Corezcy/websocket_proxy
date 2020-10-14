@@ -179,12 +179,14 @@ class WebSocketProxpy:
                 #如果所有端口被占用，返回{"receive_error":"..."}，引发client异常
                 if i == len(self.proxied_port_list) - 1:
                     try:
-                        yield from proxy_web_socket.send('{"receive_error": "PROXIED SERVER''s whole ports are using NOW!"}')
+                        yield from proxy_web_socket.send('{"receive_error": "PROXIED SERVER\'s whole ports are using NOW!"}')
+                        self.logger.warning("Client[ " + proxy_web_socket.remote_address[0] + ":" + str(proxy_web_socket.remote_address[1]) + " ] :PROXIED SERVER's whole ports are using NOW!")
+
                     except websockets.exceptions.ConnectionClosed:
                         self.logger.error("Sending receive ERROR to Client ERROR!")
                         break
                     yield from proxy_web_socket.wait_closed()
-                    self.logger.warning("PROXIED SERVER's whole ports are using NOW!")
+
 
 
 
@@ -205,10 +207,12 @@ class WebSocketProxpy:
                  else:
                      self.logger.warning("proxied_web_socket is open(1)")
 
-                 yield from proxied_web_socket.wait_closed()
+                 yield from proxy_web_socket.wait_closed()
+                 self.logger.warning("Client[ " + proxy_web_socket.remote_address[0] + ":" + str(proxy_web_socket.remote_address[1]) + " ] to proxy is closed")
 
-                 self.logger.warning("PROIED SERVER [ ws://"+proxied_web_socket.host +":"+ str(proxied_web_socket.port)+" ] is closed")
+                 yield from proxied_web_socket.close(code=1000)
                  is_port_used[str(proxied_web_socket.port)] = False
+                 self.logger.warning("PROIED SERVER [ ws://"+proxied_web_socket.host +":"+ str(proxied_web_socket.port)+" ] is closed")
 
                  break
 
@@ -217,14 +221,14 @@ class WebSocketProxpy:
             if self.is_close(request_for_proxy):
                 self.logger.info("Received CLOSE from CLIENT [" + request_for_proxy + "]")
                 #关闭proxied_web_socket
-                yield from proxied_web_socket.close()
+                yield from proxied_web_socket.close(code=1000)
                 is_port_used[str(proxied_web_socket.port)] = False
                 self.logger.warning("PROIED SERVER [ ws://" + proxied_web_socket.host + ":" + str(proxied_web_socket.port) + " ] is closed")
 
                 # 关闭proxy_web_socket
                 yield from proxy_web_socket.send('{"action": "closed"}')
                 yield from proxy_web_socket.wait_closed()
-                self.logger.warning("PROXY SERVER is closed!")
+                self.logger.warning("PROXY SERVER [ " + proxy_web_socket.remote_address[0] + ":" + str(proxy_web_socket.remote_address[1]) + " ] is closed")
 
                 return
 
@@ -252,11 +256,13 @@ class WebSocketProxpy:
                 self.logger.error("Receive response ERROR from PROXIED SERVER!")
                 #关闭proxied_web_socket
                 yield from proxied_web_socket.wait_closed()
-                self.logger.warning("PROIED SERVER [ " + proxied_web_socket.host + ":" + str(proxied_web_socket.port) + " ] is closed")
+                self.logger.warning("PROXIED SERVER [ " + proxied_web_socket.host + ":" + str(proxied_web_socket.port) + " ] is closed")
                 #关闭proxy_web_socket
+
                 yield from proxy_web_socket.close()
+                self.logger.warning("PROXY SERVER [ " + proxy_web_socket.remote_address[0] + ":" + str(proxy_web_socket.remote_address[1]) + " ] is closed")
+
                 is_port_used[str(proxied_web_socket.port)] = False
-                self.logger.warning("PROXY SERVER is closed!")
                 return
                 # proxied_web_socket = yield from websockets.connect(proxied_url_value,ping_interval=20,ping_timeout=20, close_timeout=10)
                 # yield from self.send_to_web_socket_connection_aware(proxy_web_socket, proxied_web_socket,
@@ -270,15 +276,13 @@ class WebSocketProxpy:
             '''
             try:
                 yield from proxy_web_socket.send(response_from_proxy)
-                self.logger.info("Sending response to CLIENT [" + response_from_proxy + "]")
+                self.logger.info("Sending response from PROXY to CLIENT [" + response_from_proxy + "]")
             except websockets.exceptions.ConnectionClosed:
-                self.logger.error("Sending response to CLIENT ERROR!")
+                self.logger.error("Sending response from PROXY to CLIENT ERROR!")
+                yield from proxy_web_socket.wait_closed()
+                self.logger.warning("PROXY SERVER [" + proxy_web_socket.remote_address[0] + ":" + str(proxy_web_socket.remote_address[1]) + " ] is closed")
                 break
 
-        if proxied_web_socket.closed:
-            self.logger.warning("proxied_web_socket is closed(2)")
-        else:
-            self.logger.warning("proxied_web_socket is open(2)")
 
     def get_post_authentication_directions(self):
         authentication_message = "Authenticated. "

@@ -1,4 +1,5 @@
 # README
+
 简易代理服务器 (Python 3).
 
 ## 配置要求
@@ -8,6 +9,18 @@ Python 3 (tested on Python 3.7)
 The 'websockets' module (`pip install websockets`)
 
 The 'yaml' module (`pip install pyyaml`)
+
+## 延迟测试
+
+|                   测试文件                    |    通过代理    |   不通过代理   |
+| :-------------------------------------------: | :------------: | :------------: |
+|         01-connecting-to-simulator.py         | 0:00:00.059298 | 0:00:00.052263 |
+|    11-collision-callbacks.py (sim.run(15s))    | 0:00:23.398082 | 0:00:22.981394 |
+|             21-map-coordinates.py             | 0:00:00.104788 | 0:00:00.097312 |
+| 31-wait-for-distance-trigger.py (sim.run(10s)) | 0:00:18.610033 | 0:00:18.541552 |
+
+
+
 
 ## 结构说明
 
@@ -30,29 +43,34 @@ The 'yaml' module (`pip install pyyaml`)
 ```
 
 ## 代码说明
+
 ### launch.py
 
 `config = yaml.load(open("CONFIG_PATH")) `
+
 >加载配置文件
 
 `WebSocketProxpy(loggers.ConsoleDebugLogger()).run(config)`
+
 >loggers.ConsoleDebugLogger()是日志处理类对象；WebSocketProxpy.run()是代理服务器程序入口
 
 ### proxy.py
+
 全局变量：
 
 `is_port_used = {}`
 
->字典数据类型，记录端口是否被占用,格式：{"port":bool}
+>字典数据类型，记录端口是否被占用，格式：{"port":bool}
 
 
 -------
 
 `WebSocketProxpy`类内变量简介：
+
 ```
 logger = None                       #日志处理类对象
 host = ""                           #宿主机
-port = 0                            #端口号
+port = 0                            #代理服务器的端口号
 serverType = "OPEN_URL"             #连接类型
 proxied_url = ""                    #eg.ws://10.78.4.163:    
 password = ""                       #连接密码
@@ -67,34 +85,54 @@ requests_per_connection = 10000     #每个连接的最大请求数量
 `WebSocketProxpy`类内函数简介：
 
 def is_close(json_content):
+
 > 判断手否收到关闭请求，# expects {"url": "ws://0.0.0.0:8081"}
 
 def load_config_from_yaml(self, config_yaml):
+
 > 读取配置文件并赋值
 
 **def run(self,config_yaml):**
+
 > 建立`client--proxy`之间的连接 
+>
 > 运行调度函数proxy_dispatcher
 
-**@asyncio.coroutine
-def proxy_dispatcher(self, proxy_web_socket, path):**
+**@asyncio.coroutine**
+
+**def proxy_dispatcher(self, proxy_web_socket, path):**
+
+> 协程函数，[协程的了解可以参考这里](https://pythonav.com/wiki/detail/6/91/)
+>
 > 代理服务器调度函数，判断有无端口可用，有端口，则分空闲端口；无端口，则返回忙碌
 > 处理`client--proxy--server`之间的请求(调用process_arbitrary_requests)
 
 **def process_arbitrary_requests(self, proxy_web_socket, proxied_web_socket, connection):**
+
 > 负责四部分任务：
-> part 1:从client接收请求;part 2:proxy发送请求到server;part 3:proxy接受server返回的数据;part 4:proxy返回数据到client
+>
+> part 1:client发送请求到proxy;
+>
+> part 2:proxy传递请求到server;
+>
+> part 3:proxy接受server返回的数据;
+>
+> part 4:proxy传递数据到client
 
 
 def connect_to_proxy_server(self, proxied_url_value, proxy_web_socket):
+
 > 建立`proxy--server`之间的链接
 
 def send_to_web_socket_connection_aware(self, proxy_web_socket, proxied_web_socket, request_for_proxy):
+
 > 发送请求服务到`server`
 
 
 
 ## 使用说明
+
 1、在`config.yaml`中按照注释说明修改`host`、`port`、`proxiedPortList`
+
 2、当使用结束后，发送`{"action": "close"}`到代理服务器，代理服务器执行关闭`client--proxy`和`proxy--server`的指令。
 

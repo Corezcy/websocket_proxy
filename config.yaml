@@ -4,14 +4,24 @@ configuration:
     serverConfiguration:
         # type can be OPEN_URL or FORCED_URL or FORCED_URL_NO_PASSWORD - later two need proxiedUrl uncommented
         type: "FORCED_URL_NO_PASSWORD"
+        # 127.0.0.1，本机可访问；0.0.0.0，外网可访问
         listenHost: "0.0.0.0"
+        # 代理服务器的端口
         port: "1111"
+        # 每次连接最大请求数量
         requestsPerConnection: "10000"
+        # 服务器端开放PythonAPI的端口
+        # 注：-(空格)"port"
+        # 必要时请使用'#'单行注释
         proxiedPortList:
         - "9192"
         - "9193"
-        - "9194"
+#        - "9194"
+        # 服务器端地址，注：“ws://IP:”
+        # “:”后面后续会加上空闲的端口
         proxiedUrl: "ws://10.78.4.163:"
     transportConfiguration:
+        # JSON前缀，无用
         sendPrefix: "" # these allow a prefix and suffix on all arbitrary requests to proxied server
+        # JSON后缀，无用
         sendSuffix: ""
