@@ -1,5 +1,5 @@
 # from websocket_proxpy.proxy import WebSocketProxpy
-from proxy import WebSocketProxpy
+from proxy_await_async_version import WebSocketProxpy
 
 from websocket_proxy.util import loggers
 from websocket_proxy.util import base
