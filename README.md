@@ -11,7 +11,7 @@ Python 3 (tested on Python 3.7)
 3. The `asyncio` module (`pip install asyncio`)
 
 ## 结构说明
-###结构图
+### 示意图
 ![结构图](media/代理服务器示意图.svg)
 
 ```shell
