@@ -1,46 +1,47 @@
 # README
 
-简易代理服务器 (Python 3).
+代理服务器 (Python 3).
 
 ## 配置要求
 
 Python 3 (tested on Python 3.7)
 
-The 'websockets' module (`pip install websockets`)
-
-The 'yaml' module (`pip install pyyaml`)
-
-## 延迟测试
-
-|                   测试文件                    |    通过代理    |   不通过代理   |
-| :-------------------------------------------: | :------------: | :------------: |
-|         01-connecting-to-simulator.py         | 0:00:00.059298 | 0:00:00.052263 |
-|    11-collision-callbacks.py (sim.run(15s))    | 0:00:23.398082 | 0:00:22.981394 |
-|             21-map-coordinates.py             | 0:00:00.104788 | 0:00:00.097312 |
-| 31-wait-for-distance-trigger.py (sim.run(10s)) | 0:00:18.610033 | 0:00:18.541552 |
-
-
-
+1. The `websockets` module (`pip install websockets`)
+2. The `yaml` module (`pip install pyyaml`)
+3. The `asyncio` module (`pip install asyncio`)
 
 ## 结构说明
+###结构图
+![结构图](media/代理服务器示意图.svg)
 
-```
+```shell
 .
 ├── README.md
-├── config.yaml             #配置文件
-├── error_log.log           #输出error级别的日志
-├── output_log_all.log      #总日志文件
-├── proxy.py                #运行主体(main)
-├── launch.py               #启动入口，负责加载配置文件、运行
-├── test                    #单元测试文件
+├── config.yaml             				#配置文件
+├── error_log.log          					#输出error级别的日志
+├── output_log_all.log      				#总日志文件
+├── proxy_one_coroutine_version.py  #只包含一个asyncio.coroutine函数的运行主体(main)
+├── proxy_coroutine_yield_version.py#使用asyncio.coroutine和yield from实现的运行主体(main)
+├── proxy_await_async_version.py		#使用async和await实现的运行主体(main)
+├── launch.py               				#启动入口，负责加载配置文件、运行
+├── test                    				#单元测试文件
 │   ├── proxy_tests.py      
 │   └── testConfig.yaml
 └── websocket_proxpy        
     └── util                
-        ├── base.py         #定义fatal_fail处理方法
-        ├── jsonutils.py    #json处理方法
-        └── loggers.py      #日志记录
+        ├── base.py         				#定义fatal_fail处理方法
+        ├── jsonutils.py    				#json处理方法
+        └── loggers.py      				#日志记录
 ```
+
+>Python 3.8开始推荐使用async、await代替@asyncio.coroutine、yield from
+
+## 使用说明
+
+1. 在`config.yaml`中按照注释说明修改`port`、`proxied_url`、`proxied_port_list`
+2. 在运行`quickstart`中的测试脚本的时候，请在最后一行加入`sim.remote.finish()`。目的在于给`代理服务器`发送关闭请求，关闭已使用的端口。
+>`sim.remote.finish()`发送`{"action": "close"}`到代理服务器，代理服务器关闭`client--proxy`和`proxy--server`的连接。
+
 
 ## 代码说明
 
@@ -69,14 +70,14 @@ The 'yaml' module (`pip install pyyaml`)
 
 ```
 logger = None                       #日志处理类对象
-host = ""                           #宿主机
-port = 0                            #代理服务器的端口号
+host = ""                           #宿主机,0.0.0.0
+port = 0                            #端口号,代理服务器的端口
 serverType = "OPEN_URL"             #连接类型
 proxied_url = ""                    #eg.ws://10.78.4.163:    
 password = ""                       #连接密码
 send_suffix = ""                    #json后缀
 send_prefix = ""                    #json前缀
-proxied_port_list = []              #可用端口列表
+proxied_port_list = []              #服务器端可用端口列表
 requests_per_connection = 10000     #每个连接的最大请求数量
 ```
 
@@ -99,7 +100,6 @@ def load_config_from_yaml(self, config_yaml):
 > 运行调度函数proxy_dispatcher
 
 **@asyncio.coroutine**
-
 **def proxy_dispatcher(self, proxy_web_socket, path):**
 
 > 协程函数，[协程的了解可以参考这里](https://pythonav.com/wiki/detail/6/91/)
@@ -111,13 +111,13 @@ def load_config_from_yaml(self, config_yaml):
 
 > 负责四部分任务：
 >
-> part 1:client发送请求到proxy;
+> part 1:从client接收请求;
 >
-> part 2:proxy传递请求到server;
+> part 2:proxy发送请求到server;
 >
 > part 3:proxy接受server返回的数据;
 >
-> part 4:proxy传递数据到client
+> part 4:proxy返回数据到client
 
 
 def connect_to_proxy_server(self, proxied_url_value, proxy_web_socket):
@@ -127,12 +127,4 @@ def connect_to_proxy_server(self, proxied_url_value, proxy_web_socket):
 def send_to_web_socket_connection_aware(self, proxy_web_socket, proxied_web_socket, request_for_proxy):
 
 > 发送请求服务到`server`
-
-
-
-## 使用说明
-
-1、在`config.yaml`中按照注释说明修改`host`、`port`、`proxiedPortList`
-
-2、当使用结束后，发送`{"action": "close"}`到代理服务器，代理服务器执行关闭`client--proxy`和`proxy--server`的指令。
 
